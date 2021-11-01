@@ -132,11 +132,11 @@ export class History {
 
     const queue: Array<?NavigationGuard> = [].concat(
       // in-component leave guards
-      extractLeaveGuards(deactivated),
+      extractLeaveGuards(deactivated, this.router.app),
       // global before hooks
       this.router.beforeHooks,
       // in-component update hooks
-      extractUpdateHooks(updated),
+      extractUpdateHooks(updated, this.router.app),
       // in-config enter guards
       activated.map(m => m.beforeEnter),
       // async components
@@ -181,7 +181,7 @@ export class History {
       const isValid = () => this.current === route
       // wait until async components are resolved before
       // extracting in-component enter guards
-      const enterGuards = extractEnterGuards(activated, postEnterCbs, isValid)
+      const enterGuards = extractEnterGuards(activated, postEnterCbs, isValid, this.router.app)
       const queue = enterGuards.concat(this.router.resolveHooks)
       runQueue(queue, iterator, () => {
         if (this.pending !== route) {
@@ -256,10 +256,11 @@ function extractGuards (
   records: Array<RouteRecord>,
   name: string,
   bind: Function,
+  _vm: Object | Function,
   reverse?: boolean
 ): Array<?Function> {
   const guards = flatMapComponents(records, (def, instance, match, key) => {
-    const guard = extractGuard(def, name)
+    const guard = extractGuard(def, name, instance || _vm)
     if (guard) {
       return Array.isArray(guard)
         ? guard.map(guard => bind(guard, instance, match, key))
@@ -271,21 +272,22 @@ function extractGuards (
 
 function extractGuard (
   def: Object | Function,
-  key: string
+  key: string,
+  _vm: Object | Function
 ): NavigationGuard | Array<NavigationGuard> {
   if (typeof def !== 'function') {
     // extend now so that global mixins are applied.
-    def = _Vue.extend(def)
+    def = ((_vm && _vm.constructor) || _Vue).extend(def)
   }
   return def.options[key]
 }
 
-function extractLeaveGuards (deactivated: Array<RouteRecord>): Array<?Function> {
-  return extractGuards(deactivated, 'beforeRouteLeave', bindGuard, true)
+function extractLeaveGuards (deactivated: Array<RouteRecord>, _vm: Object | Function): Array<?Function> {
+  return extractGuards(deactivated, 'beforeRouteLeave', bindGuard, _vm, true)
 }
 
-function extractUpdateHooks (updated: Array<RouteRecord>): Array<?Function> {
-  return extractGuards(updated, 'beforeRouteUpdate', bindGuard)
+function extractUpdateHooks (updated: Array<RouteRecord>, _vm: Object | Function): Array<?Function> {
+  return extractGuards(updated, 'beforeRouteUpdate', bindGuard, _vm)
 }
 
 function bindGuard (guard: NavigationGuard, instance: ?_Vue): ?NavigationGuard {
@@ -299,14 +301,16 @@ function bindGuard (guard: NavigationGuard, instance: ?_Vue): ?NavigationGuard {
 function extractEnterGuards (
   activated: Array<RouteRecord>,
   cbs: Array<Function>,
-  isValid: () => boolean
+  isValid: () => boolean,
+  _vm: Object | Function
 ): Array<?Function> {
   return extractGuards(
     activated,
     'beforeRouteEnter',
     (guard, _, match, key) => {
       return bindEnterGuard(guard, match, key, cbs, isValid)
-    }
+    },
+    _vm
   )
 }
 

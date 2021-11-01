@@ -9,7 +9,7 @@ export function resolveAsyncComponents (matched: Array<RouteRecord>): Function {
     let pending = 0
     let error = null
 
-    flatMapComponents(matched, (def, _, match, key) => {
+    flatMapComponents(matched, (def, _vm, match, key) => {
       // if it's a function and doesn't have cid attached,
       // assume it's an async component resolve function.
       // we are not using Vue's default async resolving mechanism because
@@ -26,7 +26,7 @@ export function resolveAsyncComponents (matched: Array<RouteRecord>): Function {
           // save resolved on async factory in case it's used elsewhere
           def.resolved = typeof resolvedDef === 'function'
             ? resolvedDef
-            : _Vue.extend(resolvedDef)
+            : ((_vm ? (_vm.extend ? _vm : _vm.constructor) : null) || (this.router.app && this.router.app.constructor) || _Vue).extend(resolvedDef)
           match.components[key] = resolvedDef
           pending--
           if (pending <= 0) {

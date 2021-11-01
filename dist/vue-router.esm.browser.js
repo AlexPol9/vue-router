@@ -1,6 +1,6 @@
 /*!
   * vue-router v3.1.2
-  * (c) 2019 Evan You
+  * (c) 2021 Evan You
   * @license MIT
   */
 /*  */
@@ -12,7 +12,7 @@ function assert (condition, message) {
 }
 
 function warn (condition, message) {
-  if ("development" !== 'production' && !condition) {
+  if ( !condition) {
     typeof console !== 'undefined' && console.warn(`[vue-router] ${message}`);
   }
 }
@@ -135,7 +135,7 @@ var View = {
 
     return h(component, data, children)
   }
-}
+};
 
 function resolveProps (route, config) {
   switch (typeof config) {
@@ -183,7 +183,7 @@ function resolveQuery (
   try {
     parsedQuery = parse(query || '');
   } catch (e) {
-    "development" !== 'production' && warn(false, e.message);
+     warn(false, e.message);
     parsedQuery = {};
   }
   for (const key in extraQuery) {
@@ -262,7 +262,7 @@ function createRoute (
   redirectedFrom,
   router
 ) {
-  const stringifyQuery$$1 = router && router.options.stringifyQuery;
+  const stringifyQuery = router && router.options.stringifyQuery;
 
   let query = location.query || {};
   try {
@@ -276,11 +276,11 @@ function createRoute (
     hash: location.hash || '',
     query,
     params: location.params || {},
-    fullPath: getFullPath(location, stringifyQuery$$1),
+    fullPath: getFullPath(location, stringifyQuery),
     matched: record ? formatMatch(record) : []
   };
   if (redirectedFrom) {
-    route.redirectedFrom = getFullPath(redirectedFrom, stringifyQuery$$1);
+    route.redirectedFrom = getFullPath(redirectedFrom, stringifyQuery);
   }
   return Object.freeze(route)
 }
@@ -565,7 +565,7 @@ function parse (str, options) {
  * @return {!function(Object=, Object=)}
  */
 function compile (str, options) {
-  return tokensToFunction(parse(str, options))
+  return tokensToFunction(parse(str, options), options)
 }
 
 /**
@@ -595,14 +595,14 @@ function encodeAsterisk (str) {
 /**
  * Expose a method for transforming tokens into the path function.
  */
-function tokensToFunction (tokens) {
+function tokensToFunction (tokens, options) {
   // Compile all the tokens into regexps.
   var matches = new Array(tokens.length);
 
   // Compile all the patterns before compilation.
   for (var i = 0; i < tokens.length; i++) {
     if (typeof tokens[i] === 'object') {
-      matches[i] = new RegExp('^(?:' + tokens[i].pattern + ')$');
+      matches[i] = new RegExp('^(?:' + tokens[i].pattern + ')$', flags(options));
     }
   }
 
@@ -715,7 +715,7 @@ function attachKeys (re, keys) {
  * @return {string}
  */
 function flags (options) {
-  return options.sensitive ? '' : 'i'
+  return options && options.sensitive ? '' : 'i'
 }
 
 /**
@@ -1097,7 +1097,24 @@ var Link = {
         // in case the <a> is a static node
         a.isStatic = false;
         const aData = (a.data = extend({}, a.data));
-        aData.on = on;
+        aData.on = aData.on || {};
+        // transform existing events in both objects into arrays so we can push later
+        for (const event in aData.on) {
+          const handler = aData.on[event];
+          if (event in on) {
+            aData.on[event] = Array.isArray(handler) ? handler : [handler];
+          }
+        }
+        // append new listeners for router-link
+        for (const event in on) {
+          if (event in aData.on) {
+            // on[event] is always a function
+            aData.on[event].push(on[event]);
+          } else {
+            aData.on[event] = handler;
+          }
+        }
+
         const aAttrs = (a.data.attrs = extend({}, a.data.attrs));
         aAttrs.href = href;
       } else {
@@ -1108,7 +1125,7 @@ var Link = {
 
     return h(this.tag, data, this.$slots.default)
   }
-}
+};
 
 function guardEvent (e) {
   // don't redirect with control keys
@@ -1143,6 +1160,8 @@ function findAnchor (children) {
     }
   }
 }
+
+const lodashLang = require('lodash/lang');
 
 let _Vue;
 
@@ -1186,8 +1205,8 @@ function install (Vue) {
     get () { return this._routerRoot._route }
   });
 
-  Vue.component('RouterView', View);
-  Vue.component('RouterLink', Link);
+  Vue.component('RouterView', lodashLang.cloneDeep(View));
+  Vue.component('RouterLink', lodashLang.cloneDeep(Link));
 
   const strats = Vue.config.optionMergeStrategies;
   // use the same hook merging strategy for route hooks
@@ -1318,7 +1337,7 @@ function addRouteRecord (
     const aliases = Array.isArray(route.alias) ? route.alias : [route.alias];
     for (let i = 0; i < aliases.length; ++i) {
       const alias = aliases[i];
-      if ("development" !== 'production' && alias === path) {
+      if ( alias === path) {
         warn(
           false,
           `Found an alias with the same value as the path: "${path}". You have to remove that alias. It will be ignored in development.`
@@ -1345,7 +1364,7 @@ function addRouteRecord (
   if (name) {
     if (!nameMap[name]) {
       nameMap[name] = record;
-    } else if ("development" !== 'production' && !matchAs) {
+    } else if ( !matchAs) {
       warn(
         false,
         `Duplicate named routes definition: ` +
@@ -1576,6 +1595,28 @@ function resolveRecordPath (path, record) {
 
 /*  */
 
+// use User Timing api (if present) for more accurate key precision
+const Time =
+  inBrowser && window.performance && window.performance.now
+    ? window.performance
+    : Date;
+
+function genStateKey () {
+  return Time.now().toFixed(3)
+}
+
+let _key = genStateKey();
+
+function getStateKey () {
+  return _key
+}
+
+function setStateKey (key) {
+  return (_key = key)
+}
+
+/*  */
+
 const positionStore = Object.create(null);
 
 function setupScroll () {
@@ -1725,39 +1766,22 @@ function scrollToPosition (shouldScroll, position) {
 
 /*  */
 
-const supportsPushState = inBrowser && (function () {
-  const ua = window.navigator.userAgent;
+const supportsPushState =
+  inBrowser &&
+  (function () {
+    const ua = window.navigator.userAgent;
 
-  if (
-    (ua.indexOf('Android 2.') !== -1 || ua.indexOf('Android 4.0') !== -1) &&
-    ua.indexOf('Mobile Safari') !== -1 &&
-    ua.indexOf('Chrome') === -1 &&
-    ua.indexOf('Windows Phone') === -1
-  ) {
-    return false
-  }
+    if (
+      (ua.indexOf('Android 2.') !== -1 || ua.indexOf('Android 4.0') !== -1) &&
+      ua.indexOf('Mobile Safari') !== -1 &&
+      ua.indexOf('Chrome') === -1 &&
+      ua.indexOf('Windows Phone') === -1
+    ) {
+      return false
+    }
 
-  return window.history && 'pushState' in window.history
-})();
-
-// use User Timing api (if present) for more accurate key precision
-const Time = inBrowser && window.performance && window.performance.now
-  ? window.performance
-  : Date;
-
-let _key = genKey();
-
-function genKey () {
-  return Time.now().toFixed(3)
-}
-
-function getStateKey () {
-  return _key
-}
-
-function setStateKey (key) {
-  _key = key;
-}
+    return window.history && 'pushState' in window.history
+  })();
 
 function pushState (url, replace) {
   saveScrollPosition();
@@ -1766,10 +1790,9 @@ function pushState (url, replace) {
   const history = window.history;
   try {
     if (replace) {
-      history.replaceState({ key: _key }, '', url);
+      history.replaceState({ key: getStateKey() }, '', url);
     } else {
-      _key = genKey();
-      history.pushState({ key: _key }, '', url);
+      history.pushState({ key: setStateKey(genStateKey()) }, '', url);
     }
   } catch (e) {
     window.location[replace ? 'replace' : 'assign'](url);
@@ -1807,7 +1830,7 @@ function resolveAsyncComponents (matched) {
     let pending = 0;
     let error = null;
 
-    flatMapComponents(matched, (def, _, match, key) => {
+    flatMapComponents(matched, (def, _vm, match, key) => {
       // if it's a function and doesn't have cid attached,
       // assume it's an async component resolve function.
       // we are not using Vue's default async resolving mechanism because
@@ -1824,7 +1847,7 @@ function resolveAsyncComponents (matched) {
           // save resolved on async factory in case it's used elsewhere
           def.resolved = typeof resolvedDef === 'function'
             ? resolvedDef
-            : _Vue.extend(resolvedDef);
+            : ((_vm ? (_vm.extend ? _vm : _vm.constructor) : null) || (this.router.app && this.router.app.constructor) || _Vue).extend(resolvedDef);
           match.components[key] = resolvedDef;
           pending--;
           if (pending <= 0) {
@@ -1834,7 +1857,7 @@ function resolveAsyncComponents (matched) {
 
         const reject = once(reason => {
           const msg = `Failed to resolve async component ${key}: ${reason}`;
-          "development" !== 'production' && warn(false, msg);
+           warn(false, msg);
           if (!error) {
             error = isError(reason)
               ? reason
@@ -1906,9 +1929,22 @@ function once (fn) {
 }
 
 class NavigationDuplicated extends Error {
-  constructor () {
-    super('Navigating to current location is not allowed');
+  constructor (normalizedLocation) {
+    super();
     this.name = this._name = 'NavigationDuplicated';
+    // passing the message to super() doesn't seem to work in the transpiled version
+    this.message = `Navigating to current location ("${
+      normalizedLocation.fullPath
+    }") is not allowed`;
+    // add a stack property so services like Sentry can correctly display it
+    Object.defineProperty(this, 'stack', {
+      value: new Error().stack,
+      writable: true,
+      configurable: true
+    });
+    // we could also have used
+    // Error.captureStackTrace(this, this.constructor)
+    // but it only exists on node and chrome
   }
 }
 
@@ -2036,11 +2072,11 @@ class History {
 
     const queue = [].concat(
       // in-component leave guards
-      extractLeaveGuards(deactivated),
+      extractLeaveGuards(deactivated, this.router.app),
       // global before hooks
       this.router.beforeHooks,
       // in-component update hooks
-      extractUpdateHooks(updated),
+      extractUpdateHooks(updated, this.router.app),
       // in-config enter guards
       activated.map(m => m.beforeEnter),
       // async components
@@ -2085,7 +2121,7 @@ class History {
       const isValid = () => this.current === route;
       // wait until async components are resolved before
       // extracting in-component enter guards
-      const enterGuards = extractEnterGuards(activated, postEnterCbs, isValid);
+      const enterGuards = extractEnterGuards(activated, postEnterCbs, isValid, this.router.app);
       const queue = enterGuards.concat(this.router.resolveHooks);
       runQueue(queue, iterator, () => {
         if (this.pending !== route) {
@@ -2156,10 +2192,11 @@ function extractGuards (
   records,
   name,
   bind,
+  _vm,
   reverse
 ) {
   const guards = flatMapComponents(records, (def, instance, match, key) => {
-    const guard = extractGuard(def, name);
+    const guard = extractGuard(def, name, instance || _vm);
     if (guard) {
       return Array.isArray(guard)
         ? guard.map(guard => bind(guard, instance, match, key))
@@ -2171,21 +2208,22 @@ function extractGuards (
 
 function extractGuard (
   def,
-  key
+  key,
+  _vm
 ) {
   if (typeof def !== 'function') {
     // extend now so that global mixins are applied.
-    def = _Vue.extend(def);
+    def = ((_vm && _vm.constructor) || _Vue).extend(def);
   }
   return def.options[key]
 }
 
-function extractLeaveGuards (deactivated) {
-  return extractGuards(deactivated, 'beforeRouteLeave', bindGuard, true)
+function extractLeaveGuards (deactivated, _vm) {
+  return extractGuards(deactivated, 'beforeRouteLeave', bindGuard, _vm, true)
 }
 
-function extractUpdateHooks (updated) {
-  return extractGuards(updated, 'beforeRouteUpdate', bindGuard)
+function extractUpdateHooks (updated, _vm) {
+  return extractGuards(updated, 'beforeRouteUpdate', bindGuard, _vm)
 }
 
 function bindGuard (guard, instance) {
@@ -2199,14 +2237,16 @@ function bindGuard (guard, instance) {
 function extractEnterGuards (
   activated,
   cbs,
-  isValid
+  isValid,
+  _vm
 ) {
   return extractGuards(
     activated,
     'beforeRouteEnter',
     (guard, _, match, key) => {
       return bindEnterGuard(guard, match, key, cbs, isValid)
-    }
+    },
+    _vm
   )
 }
 
@@ -2612,7 +2652,7 @@ class VueRouter {
   }
 
   init (app /* Vue component instance */) {
-    "development" !== 'production' && assert(
+     assert(
       install.installed,
       `not installed. Make sure to call \`Vue.use(VueRouter)\` ` +
       `before creating root instance.`

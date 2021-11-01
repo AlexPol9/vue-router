@@ -1,6 +1,8 @@
 import View from './components/view'
 import Link from './components/link'
 
+const lodashLang = require('lodash/lang')
+
 export let _Vue
 
 export function install (Vue) {
@@ -43,8 +45,8 @@ export function install (Vue) {
     get () { return this._routerRoot._route }
   })
 
-  Vue.component('RouterView', View)
-  Vue.component('RouterLink', Link)
+  Vue.component('RouterView', lodashLang.cloneDeep(View))
+  Vue.component('RouterLink', lodashLang.cloneDeep(Link))
 
   const strats = Vue.config.optionMergeStrategies
   // use the same hook merging strategy for route hooks
